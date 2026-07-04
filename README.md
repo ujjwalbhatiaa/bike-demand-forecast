@@ -56,10 +56,34 @@ a tuned linear model** — hourly demand is dominated by *non-linear interaction
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -q   # 11 tests
+python -m pytest tests/ -q   # 14 tests
 python eda.py                # EDA figures + summary  -> reports/
 python train.py              # model comparison + report -> reports/
 ```
+
+## Predict
+
+`train.py` answers "how good is this model?" `predict.py` answers the
+question a rebalancing team actually has: *given tomorrow's forecast, how
+many bikes will we need at 8am?* It fits the same Gradient Boosting model on
+the full dataset (well under a second — see the `fit_seconds` column above)
+and scores one set of conditions you pass on the command line:
+
+```bash
+python predict.py --season 2 --month 6 --hour 8 --weekday 1 --workingday \
+    --weather 1 --temp-c 22 --feels-like-c 24 --humidity-pct 55 --windspeed-kmh 12
+# Conditions: spring, 22°C (clear / few clouds), 08:00, weekday=1, workingday=True
+# Predicted demand: 695 rentals in this hour
+
+python predict.py --season 2 --month 6 --hour 3 --weekday 1 --workingday \
+    --weather 1 --temp-c 18 --feels-like-c 19 --humidity-pct 60 --windspeed-kmh 10
+# Predicted demand: 11 rentals in this hour   (3am vs. 8am rush — same day)
+```
+
+Inputs are validated against the same ranges the training data itself has to
+satisfy (`bikeshare.data.VALID_RANGES`), so an out-of-range value (e.g.
+`--temp-c 999`) fails fast with a clear error instead of a silent bad
+prediction. Run `python predict.py --help` for the full flag list.
 
 ## Project structure
 
@@ -71,7 +95,8 @@ bikeshare/          the package
   models.py         the model ladder (dummy → ridge → forest → boosting)
 eda.py              exploratory analysis -> 4 figures + EDA-SUMMARY.md
 train.py            train/compare models -> metrics, figures, MODEL-REPORT.md
-tests/              pytest suite (data integrity, features, split, models)
+predict.py          predict demand for one set of conditions (CLI)
+tests/              pytest suite (data integrity, features, split, models, predict)
 data/hour.csv       UCI Bike Sharing dataset (17,379 hourly rows, 2011-2012)
 ```
 
