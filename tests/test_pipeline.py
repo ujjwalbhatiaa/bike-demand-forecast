@@ -1,6 +1,7 @@
 """Tests for the bike-demand pipeline. Run with:  python -m pytest tests/ -q"""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -10,6 +11,7 @@ from bikeshare.data import DataValidationError, load_hourly
 from bikeshare.evaluate import regression_metrics, time_split
 from bikeshare.features import FEATURE_COLUMNS, add_engineered_columns, build_matrices
 from bikeshare.models import get_models
+from predict import build_query_row
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "hour.csv"
 
@@ -109,3 +111,36 @@ def test_models_beat_baseline_on_subset(df):
     for name, rmse in scores.items():
         if name != "Mean baseline":
             assert rmse < scores["Mean baseline"], f"{name} did not beat baseline"
+
+
+# ---------------------------------------------------------------- predict CLI
+def _args(**overrides):
+    """Build an argparse.Namespace with sensible defaults for build_query_row."""
+    defaults = dict(
+        year=2012, season=2, month=6, hour=8, weekday=1,
+        holiday=False, workingday=True, weather=1,
+        temp_c=22.0, feels_like_c=24.0, humidity_pct=55.0, windspeed_kmh=12.0,
+    )
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_build_query_row_matches_training_schema(df):
+    row = build_query_row(_args())
+    X_query = add_engineered_columns(row)[FEATURE_COLUMNS]
+    X_train, _ = build_matrices(df.head(5))
+    assert list(X_query.columns) == list(X_train.columns)
+    assert not X_query.isna().any().any()
+
+
+def test_build_query_row_rejects_out_of_range_inputs():
+    # 999 C is not a value TEMP_MAX_C-normalization can represent in [0, 1].
+    with pytest.raises(SystemExit):
+        build_query_row(_args(temp_c=999.0))
+
+
+def test_predict_hour_encodes_year_flag_correctly():
+    row_2011 = build_query_row(_args(year=2011))
+    row_2012 = build_query_row(_args(year=2012))
+    assert row_2011.loc[0, "yr"] == 0
+    assert row_2012.loc[0, "yr"] == 1
